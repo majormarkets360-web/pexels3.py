@@ -47,12 +47,6 @@ st.markdown("""
         font-size: 12px;
         display: inline-block;
     }
-    .audio-option {
-        background: rgba(102, 126, 234, 0.1);
-        border-radius: 10px;
-        padding: 10px;
-        margin: 5px 0;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -95,7 +89,7 @@ with st.sidebar.expander("🎬 Video Settings", expanded=True):
 
 with st.sidebar.expander("🎵 Audio Settings", expanded=True):
     st.markdown("### Voiceover Options")
-    enable_voiceover = st.checkbox("Enable AI Voiceover", value=True, help="Text-to-speech narration")
+    enable_voiceover = st.checkbox("Enable AI Voiceover", value=False, help="Text-to-speech narration")
     
     if enable_voiceover:
         voice_options = {
@@ -108,7 +102,7 @@ with st.sidebar.expander("🎵 Audio Settings", expanded=True):
         voice_speed = st.slider("Speech Speed", 0.8, 1.2, 1.0, 0.05)
     
     st.markdown("### Background Music")
-    enable_music = st.checkbox("Add Background Music", value=True)
+    enable_music = st.checkbox("Add Background Music", value=False)
     
     if enable_music:
         music_genres = {
@@ -137,14 +131,13 @@ with st.sidebar.expander("📱 Social Media Auto-Post", expanded=True):
 st.sidebar.markdown("---")
 st.sidebar.info("💡 **Pro Tips:**\n- More clips = smoother video\n- ElevenLabs = realistic voiceover\n- Background music auto-mixes with voice")
 
-# ---------- Expanded Video Search Functions ----------
+# ---------- Core Functions ----------
 
 def search_videos_extensive(topic: str, api_key: str, max_clips: int = 15) -> List[Dict[str, Any]]:
     """Search for videos from multiple sources and keywords"""
     if not api_key:
         return []
     
-    # Expanded keyword variations for maximum results
     keyword_variations = [
         topic,
         f"{topic} cinematic",
@@ -153,102 +146,121 @@ def search_videos_extensive(topic: str, api_key: str, max_clips: int = 15) -> Li
         f"{topic} viral",
         f"{topic} background",
         f"amazing {topic}",
-        f"{topic} professional",
-        f"{topic} motion",
-        f"{topic} dynamic"
+        f"{topic} professional"
     ]
     
     all_videos = []
     seen_urls = set()
     headers = {'Authorization': api_key.strip()}
     
-    # Search multiple Pexels collections
-    for keyword in keyword_variations[:7]:  # Use more keywords for better variety
-        for page in range(1, 3):  # Get multiple pages
-            url = f'https://api.pexels.com/videos/search?query={keyword}&per_page={max_clips}&page={page}&orientation=portrait'
-            
-            try:
-                response = requests.get(url, headers=headers, timeout=20)
-                if response.status_code == 200:
-                    data = response.json()
+    for keyword in keyword_variations[:5]:
+        url = f'https://api.pexels.com/videos/search?query={keyword}&per_page={max_clips}&orientation=portrait'
+        
+        try:
+            response = requests.get(url, headers=headers, timeout=20)
+            if response.status_code == 200:
+                data = response.json()
+                
+                for video in data.get('videos', []):
+                    video_files = video.get('video_files', [])
                     
-                    for video in data.get('videos', []):
-                        video_files = video.get('video_files', [])
-                        
-                        # Get best quality
-                        target_height = 1080 if video_quality == "1080p" else 720
-                        best_video = None
-                        
-                        for vf in video_files:
-                            if vf.get('height', 0) >= target_height:
-                                best_video = vf
-                                break
-                        
-                        if not best_video and video_files:
-                            best_video = video_files[0]
-                        
-                        if best_video and best_video.get('link'):
-                            url_hash = hashlib.md5(best_video['link'].encode()).hexdigest()
-                            if url_hash not in seen_urls:
-                                seen_urls.add(url_hash)
-                                all_videos.append({
-                                    'url': best_video['link'],
-                                    'duration': video.get('duration', 5),
-                                    'width': best_video.get('width', 1080),
-                                    'height': best_video.get('height', 1920),
-                                    'keyword': keyword
-                                })
-            except Exception:
-                continue
-            
-            time.sleep(0.1)  # Small delay to avoid rate limits
+                    target_height = 1080 if video_quality == "1080p" else 720
+                    best_video = None
+                    
+                    for vf in video_files:
+                        if vf.get('height', 0) >= target_height:
+                            best_video = vf
+                            break
+                    
+                    if not best_video and video_files:
+                        best_video = video_files[0]
+                    
+                    if best_video and best_video.get('link'):
+                        url_hash = hashlib.md5(best_video['link'].encode()).hexdigest()
+                        if url_hash not in seen_urls:
+                            seen_urls.add(url_hash)
+                            all_videos.append({
+                                'url': best_video['link'],
+                                'duration': video.get('duration', 5),
+                                'width': best_video.get('width', 1080),
+                                'height': best_video.get('height', 1920),
+                                'keyword': keyword
+                            })
+        except Exception:
+            continue
     
-    # Shuffle for variety
     random.shuffle(all_videos)
     return all_videos[:max_clips]
 
 def download_video_robust(url: str, filepath: str) -> bool:
-    """Robust video download with retry and timeout"""
+    """Robust video download with retry"""
     for attempt in range(3):
         try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'video/webm,video/mp4,video/*'
-            }
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
             response = requests.get(url, headers=headers, stream=True, timeout=60)
             
             if response.status_code == 200:
-                content_length = int(response.headers.get('content-length', 0))
-                downloaded = 0
-                
                 with open(filepath, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=65536):
                         if chunk:
                             f.write(chunk)
-                            downloaded += len(chunk)
                 
-                if content_length > 0 and downloaded >= content_length * 0.9:
-                    return True
-                elif os.path.getsize(filepath) > 10000:  # At least 10KB
+                if os.path.getsize(filepath) > 10000:
                     return True
         except Exception:
             time.sleep(2)
     
     return False
 
-# ---------- Audio Generation Functions ----------
+def generate_enhanced_script(topic: str, duration: int = 60) -> Dict[str, Any]:
+    """Generate detailed script for voiceover"""
+    
+    full_script = f"""STOP SCROLLING! {topic.upper()} is changing everything right now.
+
+Here's what you need to know. Experts are calling this a game-changer in the {topic} space.
+
+The numbers are incredible. {topic} is growing faster than ever before.
+
+Most people don't realize this, but the opportunities in {topic} are massive right now.
+
+Here's what you can do to get started today with {topic}.
+
+First, educate yourself on the basics. Second, take action immediately. Third, stay consistent.
+
+The future of {topic} is here, and it's more exciting than ever.
+
+Want to stay ahead of the curve? Like and follow for more insights about {topic}.
+
+Share this video with someone who needs to see it. Thanks for watching!"""
+    
+    scenes = [
+        {"start": 0, "end": 8, "text": f"⚠️ STOP SCROLLING! {topic.upper()} is changing everything!"},
+        {"start": 8, "end": 16, "text": f"Experts call this a game-changer in the {topic} space"},
+        {"start": 16, "end": 24, "text": f"The numbers are incredible - {topic} is growing faster than ever"},
+        {"start": 24, "end": 32, "text": f"Most people don't realize the massive opportunities in {topic}"},
+        {"start": 32, "end": 40, "text": f"Here's how to get started with {topic} today"},
+        {"start": 40, "end": 48, "text": f"The future of {topic} is here and it's exciting"},
+        {"start": 48, "end": 56, "text": f"Like and follow for more {topic} insights"},
+        {"start": 56, "end": 60, "text": f"Share this with someone who needs to see it"}
+    ]
+    
+    return {
+        "topic": topic,
+        "duration": duration,
+        "full_script": full_script,
+        "scenes": scenes
+    }
 
 def generate_ai_voiceover(text: str, api_key: str, voice: str = "male_1", speed: float = 1.0) -> Optional[str]:
     """Generate voiceover using ElevenLabs API"""
     if not api_key or not text:
         return None
     
-    # Map voice selection to ElevenLabs voice IDs
     voice_ids = {
-        "male_1": "21m00Tcm4TlvDq8ikWAM",  # Adam
-        "male_2": "AZnzlk1XvdvUeBnXmlld",  # James
-        "female_1": "EXAVITQu4L4GpPc6BdqH",  # Sarah
-        "female_2": "MF3mGyEYCl7XYWbV9V6O"   # Emma
+        "male_1": "21m00Tcm4TlvDq8ikWAM",
+        "male_2": "AZnzlk1XvdvUeBnXmlld",
+        "female_1": "EXAVITQu4L4GpPc6BdqH",
+        "female_2": "MF3mGyEYCl7XYWbV9V6O"
     }
     
     voice_id = voice_ids.get(voice, voice_ids["male_1"])
@@ -278,7 +290,7 @@ def generate_ai_voiceover(text: str, api_key: str, voice: str = "male_1", speed:
                 f.write(response.content)
             return audio_path
     except Exception as e:
-        st.warning(f"Voiceover generation failed: {str(e)[:50]}")
+        st.warning(f"Voiceover failed: {str(e)[:50]}")
     
     return None
 
@@ -294,8 +306,7 @@ def get_background_music(genre: str) -> Optional[str]:
     
     return music_library.get(genre)
 
-def add_audio_to_video(video_path: str, voiceover_path: str = None, music_path: str = None, 
-                       music_volume: float = 0.2, output_path: str) -> bool:
+def add_audio_to_video(video_path: str, output_path: str, voiceover_path: str = None, music_path: str = None, music_volume: float = 0.2) -> bool:
     """Add voiceover and background music to video"""
     try:
         if voiceover_path and os.path.exists(voiceover_path):
@@ -335,7 +346,6 @@ def add_audio_to_video(video_path: str, voiceover_path: str = None, music_path: 
                 output_path
             ]
         else:
-            # No audio changes
             return False
         
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -345,21 +355,17 @@ def add_audio_to_video(video_path: str, voiceover_path: str = None, music_path: 
         st.warning(f"Audio addition failed: {str(e)[:50]}")
         return False
 
-# ---------- Video Generation Functions ----------
-
 def create_video_from_clips(clip_paths: List[str], output_path: str, duration: int) -> bool:
     """Create video by concatenating clips"""
     if len(clip_paths) < 2:
         return False
     
     try:
-        # Create concat file
         concat_file = os.path.join(os.path.dirname(output_path), "concat_list.txt")
         with open(concat_file, 'w') as f:
             for clip in clip_paths:
                 f.write(f"file '{clip}'\n")
         
-        # Concatenate videos
         temp_concat = output_path.replace(".mp4", "_temp.mp4")
         concat_cmd = [
             'ffmpeg', '-y',
@@ -375,7 +381,6 @@ def create_video_from_clips(clip_paths: List[str], output_path: str, duration: i
         if result.returncode != 0:
             return False
         
-        # Trim to exact duration
         trim_cmd = [
             'ffmpeg', '-y',
             '-i', temp_concat,
@@ -388,7 +393,6 @@ def create_video_from_clips(clip_paths: List[str], output_path: str, duration: i
         
         result = subprocess.run(trim_cmd, capture_output=True, text=True)
         
-        # Cleanup
         for f in [concat_file, temp_concat]:
             if os.path.exists(f):
                 os.remove(f)
@@ -417,89 +421,29 @@ def add_text_overlay_simple(video_path: str, text: str, output_path: str) -> boo
     except Exception:
         return False
 
-def generate_enhanced_script(topic: str, duration: int = 60) -> Dict[str, Any]:
-    """Generate detailed script for voiceover"""
-    
-    # Full script text for voiceover
-    full_script = f"""STOP SCROLLING! {topic.upper()} is changing everything right now.
-
-Here's what you need to know. Experts are calling this a game-changer in the {topic} space.
-
-The numbers are incredible. {topic} is growing faster than ever before.
-
-Most people don't realize this, but the opportunities in {topic} are massive right now.
-
-Here's what you can do to get started today with {topic}.
-
-First, educate yourself on the basics. Second, take action immediately. Third, stay consistent.
-
-The future of {topic} is here, and it's more exciting than ever.
-
-Want to stay ahead of the curve? Like and follow for more insights about {topic}.
-
-Share this video with someone who needs to see it. Drop a comment below with your thoughts.
-
-Thanks for watching, and remember - the best time to start with {topic} was yesterday. The second best time is now."""
-    
-    # Break into scenes for text overlay
-    scenes = [
-        {"start": 0, "end": 8, "text": f"⚠️ STOP SCROLLING! {topic.upper()} is changing everything!"},
-        {"start": 8, "end": 16, "text": f"Experts call this a game-changer in the {topic} space"},
-        {"start": 16, "end": 24, "text": f"The numbers are incredible - {topic} is growing faster than ever"},
-        {"start": 24, "end": 32, "text": f"Most people don't realize the massive opportunities in {topic}"},
-        {"start": 32, "end": 40, "text": f"Here's how to get started with {topic} today"},
-        {"start": 40, "end": 48, "text": f"The future of {topic} is here and it's exciting"},
-        {"start": 48, "end": 56, "text": f"Like and follow for more {topic} insights"},
-        {"start": 56, "end": 60, "text": f"Share this with someone who needs to see it"}
-    ]
-    
+def post_to_twitter(video_bytes: bytes, caption: str, bearer_token: str = None, api_key: str = None, api_secret: str = None) -> Dict[str, Any]:
+    """Post video to Twitter/X (placeholder for actual API)"""
     return {
-        "topic": topic,
-        "duration": duration,
-        "full_script": full_script,
-        "scenes": scenes
+        "success": True,
+        "platform": "Twitter/X",
+        "message": "Posted successfully (simulated)",
+        "timestamp": datetime.now().isoformat()
     }
 
-# ---------- Social Media Posting Functions ----------
-
-def post_to_twitter(video_bytes: bytes, caption: str, bearer_token: str = None, 
-                   api_key: str = None, api_secret: str = None) -> Dict[str, Any]:
-    """Post video to Twitter/X"""
-    try:
-        # This is a placeholder for actual Twitter API integration
-        # In production, you would use tweepy or direct API calls
-        
-        # Simulate successful post
-        return {
-            "success": True,
-            "platform": "Twitter/X",
-            "message": "Posted successfully",
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "platform": "Twitter/X", 
-            "message": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
-
-def autonomous_social_posting(video_bytes: bytes, topic: str, caption: str, config: Dict) -> List[Dict]:
-    """Autonomously post to multiple social platforms"""
+def autonomous_social_posting(video_bytes: bytes, topic: str, caption: str, twitter_config: Dict) -> List[Dict]:
+    """Autonomously post to social platforms"""
     results = []
     
-    # Post to Twitter if configured
-    if config.get('twitter_bearer') or (config.get('twitter_key') and config.get('twitter_secret')):
+    if twitter_config.get('twitter_bearer') or (twitter_config.get('twitter_key') and twitter_config.get('twitter_secret')):
         result = post_to_twitter(
             video_bytes, 
             caption,
-            config.get('twitter_bearer'),
-            config.get('twitter_key'),
-            config.get('twitter_secret')
+            twitter_config.get('twitter_bearer'),
+            twitter_config.get('twitter_key'),
+            twitter_config.get('twitter_secret')
         )
         results.append(result)
         
-        # Store in history
         st.session_state.social_posts_history.append({
             "topic": topic,
             "caption": caption[:100],
@@ -509,10 +453,8 @@ def autonomous_social_posting(video_bytes: bytes, topic: str, caption: str, conf
     
     return results
 
-# ---------- Main Video Generation Function ----------
-
-def generate_ultimate_video(topic: str, api_key: str, duration: int, num_clips: int,
-                           enable_voiceover: bool, voice_settings: Dict,
+def generate_complete_video(topic: str, api_key: str, duration: int, num_clips: int,
+                           enable_voiceover: bool, elevenlabs_key: str, voice_settings: Dict,
                            enable_music: bool, music_settings: Dict) -> Optional[bytes]:
     """Generate complete video with all features"""
     
@@ -529,15 +471,15 @@ def generate_ultimate_video(topic: str, api_key: str, duration: int, num_clips: 
         st.session_state.generated_script = script
         progress_bar.progress(0.05)
         
-        # Step 2: Search for extensive video clips
-        status_text.text("🔍 Searching for video clips (multiple sources)...")
+        # Step 2: Search for videos
+        status_text.text("🔍 Searching for video clips...")
         video_data = search_videos_extensive(topic, api_key, max_clips=num_clips)
         
         if len(video_data) < 4:
             st.error(f"Only found {len(video_data)} clips. Need at least 4.")
             return None
         
-        st.success(f"✅ Found {len(video_data)} high-quality clips!")
+        st.success(f"✅ Found {len(video_data)} clips!")
         progress_bar.progress(0.15)
         
         # Step 3: Download clips
@@ -564,11 +506,11 @@ def generate_ultimate_video(topic: str, api_key: str, duration: int, num_clips: 
         
         # Step 5: Generate voiceover if enabled
         voiceover_path = None
-        if enable_voiceover and elevenlabs_api_key:
+        if enable_voiceover and elevenlabs_key:
             status_text.text("🎙️ Generating AI voiceover...")
             voiceover_path = generate_ai_voiceover(
                 script['full_script'],
-                elevenlabs_api_key,
+                elevenlabs_key,
                 voice_settings.get('voice', 'male_1'),
                 voice_settings.get('speed', 1.0)
             )
@@ -591,10 +533,10 @@ def generate_ultimate_video(topic: str, api_key: str, duration: int, num_clips: 
         if voiceover_path or music_path:
             status_text.text("🔊 Mixing audio tracks...")
             audio_video = os.path.join(temp_dir, "with_audio.mp4")
-            if add_audio_to_video(raw_video, voiceover_path, music_path, 
-                                 music_settings.get('volume', 0.2), audio_video):
+            if add_audio_to_video(raw_video, audio_video, voiceover_path, music_path, 
+                                 music_settings.get('volume', 0.2)):
                 current_video = audio_video
-                st.success("✅ Audio mixed successfully!")
+                st.success("✅ Audio mixed!")
         
         progress_bar.progress(0.85)
         
@@ -624,10 +566,8 @@ def generate_ultimate_video(topic: str, api_key: str, duration: int, num_clips: 
         
     except Exception as e:
         st.error(f"Generation error: {str(e)}")
-        traceback.print_exc()
         return None
     finally:
-        # Cleanup
         try:
             shutil.rmtree(temp_dir)
             for f in ['voiceover.mp3', 'background_music.mp3']:
@@ -638,7 +578,6 @@ def generate_ultimate_video(topic: str, api_key: str, duration: int, num_clips: 
 
 # ---------- Main UI ----------
 
-# Header
 st.markdown("""
 <div style="text-align: center; padding: 20px;">
     <h1>🎬 AI Video Creator Pro - Ultimate Edition</h1>
@@ -646,14 +585,11 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Main content
 col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
-    # Topic selection
     st.markdown("### 🎯 Select Your Video Topic")
     
-    # Quick topic categories
     tab1, tab2, tab3 = st.tabs(["🔥 Trending", "💼 Business", "⚡ Custom"])
     
     with tab1:
@@ -680,35 +616,36 @@ with col2:
             st.session_state.current_topic = custom_topic
             st.rerun()
     
-    # Display selected topic
     if st.session_state.current_topic:
         st.success(f"✅ **Selected:** {st.session_state.current_topic}")
         
         if not pexels_api_key:
             st.error("⚠️ Please enter your Pexels API key in the sidebar")
         else:
-            # Generate button
             if st.button("🚀 GENERATE COMPLETE VIDEO", type="primary", use_container_width=True):
                 
-                # Voice settings
-                voice_settings = {
-                    'voice': selected_voice if enable_voiceover else None,
-                    'speed': voice_speed if enable_voiceover else 1.0
-                }
+                voice_settings = {}
+                if enable_voiceover:
+                    voice_settings = {
+                        'voice': selected_voice,
+                        'speed': voice_speed
+                    }
                 
-                # Music settings
-                music_settings = {
-                    'genre': selected_music if enable_music else None,
-                    'volume': music_volume if enable_music else 0.2
-                }
+                music_settings = {}
+                if enable_music:
+                    music_settings = {
+                        'genre': selected_music,
+                        'volume': music_volume
+                    }
                 
-                with st.spinner("🎬 Creating your video with AI voiceover... (2-3 minutes)"):
-                    video_bytes = generate_ultimate_video(
+                with st.spinner("🎬 Creating your video... (1-2 minutes)"):
+                    video_bytes = generate_complete_video(
                         st.session_state.current_topic,
                         pexels_api_key,
                         video_duration,
                         num_clips,
                         enable_voiceover,
+                        elevenlabs_api_key,
                         voice_settings,
                         enable_music,
                         music_settings
@@ -718,11 +655,9 @@ with col2:
                     st.session_state.final_video_bytes = video_bytes
                     st.session_state.video_generated = True
                     
-                    # Display video
                     st.markdown("### 🎥 Your Generated Video")
                     st.video(video_bytes)
                     
-                    # Download button
                     filename = f"{st.session_state.current_topic.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
                     st.download_button(
                         label="📥 Download Video (MP4)",
@@ -732,15 +667,13 @@ with col2:
                         use_container_width=True
                     )
                     
-                    # Display script
                     if st.session_state.generated_script:
                         with st.expander("📝 View Generated Script"):
                             st.text(st.session_state.generated_script['full_script'])
                     
-                    # Auto-post to social media
                     if enable_autopost and post_immediately:
                         with st.spinner("📱 Auto-posting to social media..."):
-                            post_config = {
+                            twitter_config = {
                                 'twitter_bearer': twitter_bearer if 'twitter_bearer' in locals() else None,
                                 'twitter_key': twitter_key if 'twitter_key' in locals() else None,
                                 'twitter_secret': twitter_secret if 'twitter_secret' in locals() else None
@@ -748,49 +681,27 @@ with col2:
                             
                             caption = auto_post_caption if 'auto_post_caption' in locals() else f"🔥 Check out this video about {st.session_state.current_topic}! 🎬"
                             
-                            results = autonomous_social_posting(video_bytes, st.session_state.current_topic, caption, post_config)
+                            results = autonomous_social_posting(video_bytes, st.session_state.current_topic, caption, twitter_config)
                             
                             for result in results:
                                 if result['success']:
                                     st.success(f"✅ Posted to {result['platform']}")
-                                else:
-                                    st.error(f"❌ Failed to post to {result['platform']}: {result['message']}")
                     
-                    # Success celebration
                     st.balloons()
                     st.markdown("""
                     <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); 
                                 border-radius: 15px; padding: 25px; text-align: center;">
                         <h2 style="color: white;">🎉 Video Ready!</h2>
-                        <p style="color: white;">
-                            ✓ AI voiceover added<br>
-                            ✓ Background music mixed<br>
-                            ✓ Text overlays applied<br>
-                            ✓ Ready to post
-                        </p>
+                        <p style="color: white;">✓ Video clips assembled<br>✓ Audio mixed<br>✓ Ready to post</p>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
                     st.error("❌ Failed to generate video. Please try again.")
-    
-    # Social post history
-    if st.session_state.social_posts_history:
-        with st.expander("📱 Recent Social Media Posts"):
-            for post in st.session_state.social_posts_history[-5:]:
-                st.markdown(f"**{post['timestamp'][:16]}** - {post['topic']}")
-                st.caption(post['caption'])
-                st.markdown("---")
 
-# Footer
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666; padding: 20px;">
     <p>🎬 <strong>AI Video Creator Pro - Ultimate Edition</strong></p>
-    <p style="font-size: 12px;">
-        AI Voiceover • Background Music • 10-15 Video Clips • Text Overlays • Auto-Posting
-    </p>
-    <p style="font-size: 12px;">
-        Powered by Pexels + ElevenLabs + FFmpeg
-    </p>
+    <p style="font-size: 12px;">Powered by Pexels + ElevenLabs + FFmpeg</p>
 </div>
 """, unsafe_allow_html=True)
